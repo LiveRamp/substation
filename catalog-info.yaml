@@ -1,0 +1,12 @@
+# BEGIN TERRAFORM MANAGED BLOCK
+"apiVersion": "backstage.io/v1alpha1"
+"kind": "Location"
+"metadata":
+  "annotations":
+    "github.com/project-slug": "LiveRamp/substation"
+    "jenkins.io/job-full-name": "LiveRamp/substation"
+  "description": "Substation is a toolkit for routing, normalizing, and enriching
+    security event and audit logs."
+  "name": "substation"
+  "tags": []
+# END TERRAFORM MANAGED BLOCK
