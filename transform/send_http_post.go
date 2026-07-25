@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,10 @@ import (
 	"github.com/brexhq/substation/v2/internal/log"
 	"github.com/brexhq/substation/v2/internal/secrets"
 )
+
+// errorBodyLimit bounds how much of a non-2xx response body is read for error
+// context. Servers may echo request data, so this is deliberately small.
+const errorBodyLimit = 512
 
 type sendHTTPPostConfig struct {
 	// URL is the HTTP(S) endpoint that data is sent to.
@@ -188,7 +193,12 @@ func (tf *sendHTTPPost) send(ctx context.Context, key string) error {
 			return err
 		}
 
-		//nolint:errcheck // Response body is discarded to avoid resource leaks.
+		// A bounded prefix of the body is retained so that non-2xx responses can
+		// explain themselves. The limit keeps payload data echoed by the server
+		// out of logs and errors.
+		//nolint:errcheck // Body is best-effort context; the status code drives control flow.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
+		//nolint:errcheck // Remainder is discarded to avoid resource leaks.
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 
@@ -200,6 +210,13 @@ func (tf *sendHTTPPost) send(ctx context.Context, key string) error {
 			WithField("event_count", eventCount).
 			WithField("duration_ms", duration.Milliseconds()).
 			Debug("Sent HTTP POST request")
+
+		// Responses that the HTTP client does not retry (any 4xx except 429) are
+		// returned with a nil error, so the status must be checked explicitly.
+		// Without this the batch is silently discarded.
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return fmt.Errorf("transform %s: http post %s: status %d: %s", tf.conf.ID, url, resp.StatusCode, bytes.TrimSpace(body))
+		}
 	}
 
 	return nil
