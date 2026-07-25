@@ -196,7 +196,6 @@ func (tf *sendHTTPPost) send(ctx context.Context, key string) error {
 		// A bounded prefix of the body is retained so that non-2xx responses can
 		// explain themselves. The limit keeps payload data echoed by the server
 		// out of logs and errors.
-		//nolint:errcheck // Body is best-effort context; the status code drives control flow.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
 		//nolint:errcheck // Remainder is discarded to avoid resource leaks.
 		io.Copy(io.Discard, resp.Body)
@@ -214,8 +213,11 @@ func (tf *sendHTTPPost) send(ctx context.Context, key string) error {
 		// Responses that the HTTP client does not retry (any 4xx except 429) are
 		// returned with a nil error, so the status must be checked explicitly.
 		// Without this the batch is silently discarded.
+		//
+		// The URL is deliberately omitted: it is interpolated from secrets and may
+		// carry credentials, and errors propagate further than the debug log above.
 		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return fmt.Errorf("transform %s: http post %s: status %d: %s", tf.conf.ID, url, resp.StatusCode, bytes.TrimSpace(body))
+			return fmt.Errorf("transform %s: http post: status %d: %s", tf.conf.ID, resp.StatusCode, bytes.TrimSpace(body))
 		}
 	}
 

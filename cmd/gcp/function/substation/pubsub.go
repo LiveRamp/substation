@@ -78,7 +78,7 @@ func (ps *processingState) log() {
 	}
 }
 
-// nolint: gocognit // Ignore cognitive complexity.
+//nolint:gocyclo,gocognit // Ignore cyclomatic and cognitive complexity.
 func pubSubHandler(ctx context.Context, e cloudevents.Event) error {
 	// Set up signal handling for graceful shutdown
 	var state processingState
