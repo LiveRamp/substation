@@ -1,8 +1,66 @@
 package transform
 
 import (
+	"encoding/json"
 	"testing"
 )
+
+var aggToArrayTests = []struct {
+	name     string
+	data     []string
+	expected string
+}{
+	{
+		"objects",
+		[]string{`{"a":1}`, `{"b":2}`},
+		`[{"a":1},{"b":2}]`,
+	},
+	{
+		// A trailing separator in the source yields a blank element. Joining it
+		// verbatim produces `[{"a":1},{"b":2},]`, which is not valid JSON.
+		"trailing blank element",
+		[]string{`{"a":1}`, `{"b":2}`, ``},
+		`[{"a":1},{"b":2}]`,
+	},
+	{
+		"interior blank element",
+		[]string{`{"a":1}`, ``, `{"b":2}`},
+		`[{"a":1},{"b":2}]`,
+	},
+	{
+		// Splitting CRLF data on a newline leaves a carriage return behind.
+		"whitespace-only element",
+		[]string{`{"a":1}`, "\r"},
+		`[{"a":1}]`,
+	},
+	{
+		"only blank elements",
+		[]string{``, ``},
+		``,
+	},
+}
+
+func TestAggToArray(t *testing.T) {
+	for _, test := range aggToArrayTests {
+		t.Run(test.name, func(t *testing.T) {
+			var data [][]byte
+			for _, d := range test.data {
+				data = append(data, []byte(d))
+			}
+
+			result := aggToArray(data)
+
+			if string(result) != test.expected {
+				t.Errorf("expected %q, got %q", test.expected, string(result))
+			}
+
+			// Any non-empty result must be valid JSON; that is the point of the test.
+			if len(result) > 0 && !json.Valid(result) {
+				t.Errorf("result is not valid JSON: %q", string(result))
+			}
+		})
+	}
+}
 
 func TestAggregateArrayConfigDecode(t *testing.T) {
 	config := &aggregateArrayConfig{}

@@ -187,6 +187,13 @@ func (tf *sendHTTPPost) send(ctx context.Context, key string) error {
 	}
 
 	for _, d := range data {
+		// Auxiliary transforms can legitimately reduce a batch to nothing, e.g. when
+		// every element was blank. Posting an empty body would be rejected by the
+		// receiver, so there is nothing to send.
+		if len(d) == 0 {
+			continue
+		}
+
 		start := time.Now()
 		resp, err := tf.client.Post(ctx, url, d, headers...)
 		if err != nil {
