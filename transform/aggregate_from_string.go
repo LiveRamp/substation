@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,13 @@ func (tf *aggregateFromString) Transform(ctx context.Context, msg *message.Messa
 	deagg := aggFromStr(msg.Data(), tf.separator)
 
 	for _, b := range deagg {
+		// Trailing or repeated separators produce blank elements that carry no
+		// data. They are skipped so that they do not reach downstream sinks, where
+		// re-aggregating them would build a malformed array.
+		if len(bytes.TrimSpace(b)) == 0 {
+			continue
+		}
+
 		msg := message.New().SetData(b).SetMetadata(msg.Metadata())
 		output = append(output, msg)
 	}

@@ -33,6 +33,42 @@ var aggregateFromStringTests = []struct {
 			`{"e":"f"}`,
 		},
 	},
+	{
+		// Newline-delimited files normally end with a trailing separator. The blank
+		// element it produces must not become a message, or re-aggregating it
+		// downstream builds a malformed array.
+		"trailing separator",
+		config.Config{
+			Settings: map[string]interface{}{
+				"separator": `\n`,
+			},
+		},
+		[]string{
+			`{"a":"b"}\n{"c":"d"}\n`,
+		},
+		[]string{
+			`{"a":"b"}`,
+			`{"c":"d"}`,
+		},
+	},
+	{
+		// Blank lines within a file produce blank elements too. Whitespace-only
+		// elements, such as the carriage return left when CRLF data is split on a
+		// newline, are covered by TestAggToArray.
+		"repeated separators",
+		config.Config{
+			Settings: map[string]interface{}{
+				"separator": `\n`,
+			},
+		},
+		[]string{
+			`{"a":"b"}\n\n{"c":"d"}\n`,
+		},
+		[]string{
+			`{"a":"b"}`,
+			`{"c":"d"}`,
+		},
+	},
 }
 
 func TestAggregateFromString(t *testing.T) {
