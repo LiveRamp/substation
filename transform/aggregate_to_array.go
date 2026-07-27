@@ -57,6 +57,12 @@ func (tf *aggregateToArray) Transform(ctx context.Context, msg *message.Message)
 		for _, items := range tf.agg.GetAll() {
 			array := aggToArray(items.Get())
 
+			// An empty aggregate has nothing to forward. Emitting a message would
+			// hand an empty payload to the next transform.
+			if len(array) == 0 {
+				continue
+			}
+
 			outMsg := message.New()
 			if tf.hasObjTrg {
 				if err := outMsg.SetValue(tf.conf.Object.TargetKey, array); err != nil {
@@ -81,6 +87,19 @@ func (tf *aggregateToArray) Transform(ctx context.Context, msg *message.Message)
 	}
 
 	array := aggToArray(tf.agg.Get(key))
+
+	// Add can also fail because the aggregate has been idle for longer than the
+	// configured duration, in which case the flush above found it empty. Emitting a
+	// message here would hand an empty payload to the next transform, and sinks
+	// cannot distinguish that from real data.
+	if len(array) == 0 {
+		tf.agg.Reset(key)
+		if ok := tf.agg.Add(key, msg.Data()); !ok {
+			return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, errBatchNoMoreData)
+		}
+
+		return nil, nil
+	}
 
 	outMsg := message.New()
 	if tf.hasObjTrg {
