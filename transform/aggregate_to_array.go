@@ -55,21 +55,13 @@ func (tf *aggregateToArray) Transform(ctx context.Context, msg *message.Message)
 		var output []*message.Message
 
 		for _, items := range tf.agg.GetAll() {
-			array := aggToArray(items.Get())
-
-			// An empty aggregate has nothing to forward. Emitting a message would
-			// hand an empty payload to the next transform.
-			if len(array) == 0 {
-				continue
+			outMsg, err := tf.newArrayMessage(items.Get())
+			if err != nil {
+				return nil, err
 			}
 
-			outMsg := message.New()
-			if tf.hasObjTrg {
-				if err := outMsg.SetValue(tf.conf.Object.TargetKey, array); err != nil {
-					return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, err)
-				}
-			} else {
-				outMsg.SetData(array)
+			if outMsg == nil {
+				continue
 			}
 
 			output = append(output, outMsg)
@@ -86,28 +78,12 @@ func (tf *aggregateToArray) Transform(ctx context.Context, msg *message.Message)
 		return nil, nil
 	}
 
-	array := aggToArray(tf.agg.Get(key))
-
 	// Add can also fail because the aggregate has been idle for longer than the
-	// configured duration, in which case the flush above found it empty. Emitting a
-	// message here would hand an empty payload to the next transform, and sinks
-	// cannot distinguish that from real data.
-	if len(array) == 0 {
-		tf.agg.Reset(key)
-		if ok := tf.agg.Add(key, msg.Data()); !ok {
-			return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, errBatchNoMoreData)
-		}
-
-		return nil, nil
-	}
-
-	outMsg := message.New()
-	if tf.hasObjTrg {
-		if err := outMsg.SetValue(tf.conf.Object.TargetKey, array); err != nil {
-			return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, err)
-		}
-	} else {
-		outMsg.SetData(array)
+	// configured duration, in which case the aggregate is still empty and
+	// newArrayMessage returns nil rather than an empty payload.
+	outMsg, err := tf.newArrayMessage(tf.agg.Get(key))
+	if err != nil {
+		return nil, err
 	}
 
 	// If data cannot be added after reset, then the batch is misconfgured.
@@ -116,7 +92,35 @@ func (tf *aggregateToArray) Transform(ctx context.Context, msg *message.Message)
 		return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, errBatchNoMoreData)
 	}
 
+	if outMsg == nil {
+		return nil, nil
+	}
+
 	return []*message.Message{outMsg}, nil
+}
+
+// newArrayMessage builds a message holding the aggregated array, or nil when the
+// aggregate is empty. An empty payload is not forwarded because sinks cannot
+// distinguish it from real data; send_http_post, for example, would POST an empty
+// body.
+func (tf *aggregateToArray) newArrayMessage(items [][]byte) (*message.Message, error) {
+	array := aggToArray(items)
+	if len(array) == 0 {
+		return nil, nil
+	}
+
+	outMsg := message.New()
+	if tf.hasObjTrg {
+		if err := outMsg.SetValue(tf.conf.Object.TargetKey, array); err != nil {
+			return nil, fmt.Errorf("transform %s: %v", tf.conf.ID, err)
+		}
+
+		return outMsg, nil
+	}
+
+	outMsg.SetData(array)
+
+	return outMsg, nil
 }
 
 func (tf *aggregateToArray) String() string {
